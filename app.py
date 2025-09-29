@@ -6,6 +6,7 @@ import mysql.connector
 from werkzeug.security import generate_password_hash, check_password_hash
 from io import BytesIO
 import pandas as pd
+from gspread_helper import get_sheet
 
 app = Flask(__name__)
 app.secret_key = 'apos_pearl_2025'
@@ -52,6 +53,53 @@ def query(sql, params=None, fetch=False, one=False):
     db.close()
     return res
 
+def sync_students_to_sheet():
+    """
+    Fetch all students ordered alphabetically by name and overwrite the Google Sheet contents.
+    Returns True if sync succeeded, False otherwise.
+    """
+    try:
+        # fetch students ordered by name
+        sql = """
+            SELECT s.student_id, s.name,
+                   d.code AS department,
+                   COALESCE(p.name, '') AS program,
+                   COALESCE(c.name, '') AS course,
+                   COALESCE(s.semester, '') AS semester,
+                   COALESCE(s.grade, '') AS grade
+            FROM students s
+            JOIN departments d ON s.dept_id = d.id
+            LEFT JOIN programs p ON s.program_id = p.id
+            LEFT JOIN courses c ON s.course_id = c.id
+            ORDER BY s.name ASC
+        """
+        rows = query(sql, fetch=True)
+
+        # build values for sheet: header + rows (list of lists)
+        header = ['StudentID', 'Name', 'Department', 'Program', 'Course', 'Semester', 'Grade']
+        values = [header]
+        for r in rows:
+            values.append([
+                r.get('student_id', ''),
+                r.get('name', ''),
+                r.get('department', ''),
+                r.get('program', ''),
+                r.get('course', ''),
+                r.get('semester', ''),
+                r.get('grade', '')
+            ])
+
+        sheet = get_sheet()  # must return gspread Worksheet
+        # Clear and write fresh
+        sheet.clear()
+        # gspread's update expects a 2D list and a starting cell
+        sheet.update('A1', values)
+        return True
+    except Exception as e:
+        # Log the exception for debugging; do not raise so DB ops remain intact
+        print("Google Sheets sync failed:", e)
+        return False
+
 # Login
 @app.route('/', methods=['GET','POST'])
 def login():
@@ -85,7 +133,6 @@ def index():
 @app.route('/students')
 def students():
     if 'user_id' not in session: return redirect(url_for('login'))
-    # filter params
     dept = request.args.get('dept')
     program = request.args.get('program')
     course = request.args.get('course')
@@ -133,7 +180,11 @@ def add_student():
         try:
             query("INSERT INTO students (student_id,name,dept_id,program_id,course_id,semester,grade) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                   (student_id,name,dept_id,program_id,course_id,semester,grade))
-            flash('Student added','success')
+            ok = sync_students_to_sheet()
+            if not ok:
+                flash('Student added, but Google Sheets sync failed. Check server logs.','warning')
+            else:
+                flash('Student added','success')
             return redirect(url_for('students'))
         except Exception as e:
             flash(f'Error: {e}','danger')
@@ -161,17 +212,33 @@ def edit_student(id):
             flash('Invalid Student ID format. Must be NN-##### (e.g., 25-12345)','danger')
             return render_template('add_student.html', student=student, departments=departments, programs=programs, courses=courses)
 
-        query("UPDATE students SET student_id=%s,name=%s,dept_id=%s,program_id=%s,course_id=%s,semester=%s,grade=%s WHERE id=%s",
-              (student_id,name,dept_id,program_id,course_id,semester,grade,id))
-        flash('Student updated','success')
+        try:
+            query("UPDATE students SET student_id=%s,name=%s,dept_id=%s,program_id=%s,course_id=%s,semester=%s,grade=%s WHERE id=%s",
+                  (student_id,name,dept_id,program_id,course_id,semester,grade,id))
+            ok = sync_students_to_sheet()
+            if not ok:
+                flash('Student updated, but Google Sheets sync failed. Check server logs.','warning')
+            else:
+                flash('Student updated','success')
+        except Exception as e:
+            flash(f'Error: {e}','danger')
         return redirect(url_for('students'))
     return render_template('add_student.html', student=student, departments=departments, programs=programs, courses=courses)
 
 @app.route('/students/delete/<int:id>', methods=['POST'])
 def delete_student(id):
     if 'user_id' not in session: return redirect(url_for('login'))
-    query("DELETE FROM students WHERE id=%s", (id,))
-    flash('Student removed','success')
+    # Fetch the student's student_id first if you need it for logging
+    student = query("SELECT student_id FROM students WHERE id=%s", (id,), fetch=True, one=True)
+    try:
+        query("DELETE FROM students WHERE id=%s", (id,))
+        ok = sync_students_to_sheet()
+        if not ok:
+            flash('Student removed from system, but Google Sheets sync failed. Check server logs.','warning')
+        else:
+            flash('Student removed','success')
+    except Exception as e:
+        flash(f'Error removing student: {e}','danger')
     return redirect(url_for('students'))
 
 # Admin-only: manage programs
@@ -221,6 +288,29 @@ def delete_course(id):
     flash('Course deleted','success')
     return redirect(url_for('manage_courses'))
 
+# Google Sheets Sync 
+@app.route('/sync_from_gsheet')
+def sync_from_gsheet():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    sheet = get_sheet()
+    records = sheet.get_all_values()[1:]  
+    for row in records:
+        if not row:
+            continue
+        row = row + ['']*(7 - len(row))
+        student_id, name, dept_id, program_id, course_id, semester, grade = row
+        existing = query("SELECT * FROM students WHERE student_id=%s", (student_id,), fetch=True, one=True)
+        if existing:
+            query("""UPDATE students SET name=%s, dept_id=%s, program_id=%s, course_id=%s, semester=%s, grade=%s 
+                     WHERE student_id=%s""",
+                  (name, dept_id, program_id, course_id, semester, grade, student_id))
+        else:
+            query("""INSERT INTO students (student_id,name,dept_id,program_id,course_id,semester,grade) 
+                     VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                  (student_id,name,dept_id,program_id,course_id,semester,grade))
+    flash("System synced with Google Sheets","success")
+    return redirect(url_for('students'))
+
 # Export to Excel
 @app.route('/export')
 def export_students():
@@ -242,9 +332,8 @@ def export_students():
         df.to_excel(writer, index=False, sheet_name='Students')
     output.seek(0)
     return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                     as_attachment=True, download_name='students.xlsx') 
+                     as_attachment=True, download_name='students.xlsx')
 
 if __name__ == '__main__':
-    ensure_default_users() 
+    ensure_default_users()
     app.run(debug=True)
-# Note: In production, set debug=False and use a proper WSGI server
