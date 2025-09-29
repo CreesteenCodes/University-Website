@@ -12,7 +12,16 @@
 6. Run app.py.
 7. Open the IP address of your local computer with its given port in your browser.
 
+# GOOGLE SHEET SYNCING
+1. Enable Google Sheets API
+* Go to Google Cloud Console.
+* Create a project and enable Google Sheets API and Google Drive API.
+* Create Service Account Credentials and download the credentials.json file.
+* Share your Google Sheet with the service account email with Editor access.
+2. In your virtual environment, install: pip install gspread oauth2client
+
 # HASHED PASSWORD
 👉 To generate the hashed password, open a Python terminal and run:
 * from werkzeug.security import generate_password_hash
+
 * print(generate_password_hash("yourpassword"))
