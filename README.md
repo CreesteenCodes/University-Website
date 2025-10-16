@@ -26,9 +26,10 @@
 
 # 🔐 Hashed Password
 👉 To generate the hashed password, open a Python terminal and run:
-'''bash
+```bash
 from werkzeug.security import generate_password_hash
 print(generate_password_hash("yourpassword"))
+
 
 
 
