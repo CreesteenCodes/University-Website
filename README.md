@@ -4,13 +4,15 @@
 * Database: MySQL (XAMPP). SQL script included to create database/tables and seed admin & instructor users.
 
 # How to run?
-1. Install Python packages: pip install flask mysql-connector-python pandas openpyxl werkzeug
-2. Start XAMPP and MySQL server.
-3. In phpMyAdmin (or via CLI), create DB by running create_db.sql.
-4. Put the project files into folder university-website.
-5. Edit config section in app.py to set your MySQL username/password if needed.
-6. Run app.py.
-7. Open the IP address of your local computer with its given port in your browser.
+1. Install Python packages
+   '''bash
+   pip install flask mysql-connector-python pandas openpyxl werkzeug
+3. Start XAMPP and MySQL server.
+4. In phpMyAdmin (or via CLI), create DB by running create_db.sql.
+5. Put the project files into folder university-website.
+6. Edit config section in app.py to set your MySQL username/password if needed.
+7. Run app.py.
+8. Open the IP address of your local computer with its given port in your browser.
 
 # Google Sheet Syncing
 1. Enable Google Sheets API
@@ -25,4 +27,5 @@
 * from werkzeug.security import generate_password_hash
 
 * print(generate_password_hash("yourpassword"))
+
 
