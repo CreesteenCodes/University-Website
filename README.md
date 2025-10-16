@@ -18,10 +18,11 @@
 * Create a project and enable Google Sheets API and Google Drive API.
 * Create Service Account Credentials and download the credentials.json file.
 * Share your Google Sheet with the service account email with Editor access.
-2. In your virtual environment, install: 'pip install gspread oauth2client'
+2. In your virtual environment, install: `pip install gspread oauth2client`
 
 # 🔐 Hashed Password
 👉 To generate the hashed password, open a Python terminal and run:
 * `from werkzeug.security import generate_password_hash`
 * `print(generate_password_hash("yourpassword"))`
+
 
